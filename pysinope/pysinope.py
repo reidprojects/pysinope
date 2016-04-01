@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import ssl
 import httplib
 import urllib
 import json
@@ -221,7 +222,8 @@ class PySinope(object):
                             'password': password,
                             'stayConnected': "0"}
 
-        self._connection = httplib.HTTPSConnection('neviweb.com')
+        self._connection = httplib.HTTPSConnection('neviweb.com',
+                context=ssl._create_unverified_context())
 
         encoded_parameters = urllib.urlencode(login_parameters)
         self._connection.request("POST",
