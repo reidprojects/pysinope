@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
-import ssl
-import httplib
-import urllib
+import requests
 import json
 
 
@@ -9,16 +7,12 @@ class Thermostat(object):
     MODE_MANUAL = "2"
     MODE_AUTOMATIC = "3"
 
-    def __init__(self, json_thermostat=None, connection=None, headers=None):
-        self._connection = connection
+    def __init__(self, json_thermostat=None, headers=None):
         self._headers = headers
 
         # Initialize the settings.
         self._active = None
         self._name = None
-        self._rf_address = None
-        self._rf_parent = None
-        self._mac = None
         self._gateway_id = None
         self._model = None
         self._type = None
@@ -34,7 +28,7 @@ class Thermostat(object):
         self._temperature = None
         self._name = None
 
-        if None is not json_thermostat:
+        if json_thermostat:
             self.load_settings_from_json(json_thermostat)
 
     @property
@@ -70,9 +64,6 @@ class Thermostat(object):
     def load_settings_from_json(self, json_thermostat):
         self._active = unicode(json_thermostat['active'])
         self._name = unicode(json_thermostat['name'])
-        self._rf_address = unicode(json_thermostat['rfAddress'])
-        self._rf_parent = unicode(json_thermostat['rfParent'])
-        self._mac = unicode(json_thermostat['mac'])
         self._gateway_id = unicode(json_thermostat['gatewayId'])
         self._model = unicode(json_thermostat['model'])
         self._type = unicode(json_thermostat['type'])
@@ -99,28 +90,26 @@ class Thermostat(object):
                                            self._mode)
 
     def update_thermostat(self):
-        encoded_parameters = urllib.urlencode({"temperature":
-                                               self._setpoint,
-                                               "mode": self._mode})
-        # Set the mode before the Temp.
-        self._set_thermostat_value("mode", encoded_parameters)
-        self._set_thermostat_value("setpoint", encoded_parameters)
+        params = {"temperature": self._setpoint,
+                  "mode": self._mode}
 
-    def _set_thermostat_value(self, name, value):
-        self._connection.request("PUT",
-                                 "/api/device/{}/{}".format(self._id, name),
-                                 value,
-                                 headers=self._headers)
-        self.load_parameters_from_json(json.loads(
-            self._connection.getresponse().read()))
+        # Set the mode before the Temp.
+        self._set_thermostat_value("mode", params)
+        self._set_thermostat_value("setpoint", params)
+
+    def _set_thermostat_value(self, name, params):
+        r = requests.put("https://neviweb.com/api/device/{}/{}".format(self._id, name),
+                         params,
+                         headers=self._headers)
+
+        self.load_parameters_from_json(r.json())
 
 
 class Gateway(object):
     MODE_AWAY = '2'
     MODE_HOME = '0'
 
-    def __init__(self, json_gateway=None, connection=None, headers=None):
-        self._connection = connection
+    def __init__(self, json_gateway=None, headers=None):
         self._headers = headers
 
         self._id = None
@@ -160,8 +149,8 @@ class Gateway(object):
     @mode.setter
     def mode(self, value):
         self._mode = value
-        encoded_parameters = urllib.urlencode({"mode": self._mode})
-        self._set_gateway_value('mode', encoded_parameters)
+        params = {"mode": self._mode}
+        self._set_gateway_value('mode', params)
 
     @property
     def thermostats(self):
@@ -195,14 +184,13 @@ class Gateway(object):
                 return thermostat
         raise Exception('Thermostat {} not found.'.format(name))
 
-    def _set_gateway_value(self, name, value):
-        self._connection.request("POST",
-                                 "/api/gateway/{}/{}".format(self._id, name),
-                                 value,
-                                 headers=self._headers)
-        test = self._connection.getresponse().read()
+    def _set_gateway_value(self, name, params):
+        r = requests.post("https://neviweb.com/api/gateway/{}/{}".format(self._id, name),
+                          params,
+                          headers=self._headers)
+        test = r.text
         print test
-        self.load_from_json(json.loads(test))
+        self.load_from_json(r.json())
 
 
 class PySinope(object):
@@ -213,7 +201,6 @@ class PySinope(object):
         @return:
         """
         self._headers = {'Content-type': r'application/x-www-form-urlencoded'}
-        self._connection = None
         self._session_id = None
         self._gateways = list()
 
@@ -222,17 +209,12 @@ class PySinope(object):
                             'password': password,
                             'stayConnected': "0"}
 
-        self._connection = httplib.HTTPSConnection('neviweb.com',
-                context=ssl._create_unverified_context())
+        r = requests.post("https://neviweb.com/api/login",
+                          data=login_parameters,
+                          headers=self._headers)
 
-        encoded_parameters = urllib.urlencode(login_parameters)
-        self._connection.request("POST",
-                                 "/api/login",
-                                 body=encoded_parameters,
-                                 headers=self._headers)
-
-        response = self._connection.getresponse().read()
-        self._session_id = json.loads(response)['session']
+        response = r.json()
+        self._session_id = response['session']
         self._headers['Session-Id'] = self._session_id
         return self
 
@@ -241,44 +223,36 @@ class PySinope(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
 
-        self._connection.request("GET",
-                                 "/api/logout",
-                                 headers=self._headers)
-
-        self._connection.getresponse().read()
+        requests.get("https://neviweb.com/api/logout",
+                     headers=self._headers)
         return self
 
     def read_gateway(self):
-        assert self._connection is not None
+        r = requests.get("https://neviweb.com/api/gateway",
+                     headers=self._headers)
 
-        self._connection.request("GET",
-                                 "/api/gateway",
-                                 headers=self._headers)
-
-        for json_gateway in json.loads(self._connection.getresponse().read()):
+        for json_gateway in r.json():
             self._gateways.append(
-                Gateway(json_gateway, self._connection, self._headers))
+                Gateway(json_gateway, self._headers))
 
         for gateway in self._gateways:
-            self._connection.request("GET",
-                                     "/api/device?gatewayId=%s" % gateway.id,
-                                     headers=self._headers)
+            r = requests.get(
+                    "https://neviweb.com/api/device?gatewayId={}".format(gateway.id),
+                    headers=self._headers)
 
-            for json_thermostat in json.loads(
-                    self._connection.getresponse().read()):
+            for json_thermostat in r.json():
                 gateway.thermostats.append(Thermostat(
-                    json_thermostat, self._connection, self._headers))
+                    json_thermostat, self._headers))
 
             for thermostat in gateway.thermostats:
                 self.read_thermostat(thermostat)
 
     def read_thermostat(self, thermostat):
-        self._connection.request("GET",
-                                 "/api/device/%s/data?" % thermostat.id,
-                                 headers=self._headers)
+        r = requests.get(
+                "https://neviweb.com/api/device/{}/data?".format(thermostat.id),
+                headers=self._headers)
 
-        thermostat.load_parameters_from_json(
-            json.loads(self._connection.getresponse().read()))
+        thermostat.load_parameters_from_json(r.json())
 
     @property
     def gateways(self):
@@ -292,15 +266,19 @@ class PySinope(object):
 
 
 if "__main__" == __name__:
+    import sys
     py_sinope = PySinope()
 
-    with py_sinope.connect('email', 'password') as sinope_interface:
-
+    with py_sinope.connect(sys.argv[1], sys.argv[2]) as sinope_interface:
         sinope_interface.read_gateway()
-        main_gateway = sinope_interface.get_gateway_by_name('Maison')
-        main_gateway.mode = Gateway.MODE_AWAY      # Set the gateway mode.
-        salon_therm = main_gateway.get_thermostat_by_name('Salon / Cuisine')
-        print unicode(salon_therm)
-        salon_therm.mode = Thermostat.MODE_MANUAL  # Set the Thermostat mode.
-        salon_therm.setpoint = "20.00"
-        print unicode(salon_therm)
+
+        main_gateway = sinope_interface.get_gateway_by_name('Home')
+        therm = main_gateway.get_thermostat_by_name('Bedroom')
+
+        print therm.temperature
+        print therm.setpoint
+
+        therm.mode = Thermostat.MODE_MANUAL  # Set the Thermostat mode.
+        therm.setpoint = "20.00"
+
+        print unicode(therm)
