@@ -2,7 +2,7 @@ from distutils.core import setup
 
 setup(
     name='pysinope',
-    version='0.1.0',
+    version='1.0.0',
     packages=['pysinope'],
     package_dir={'pysinope': 'pysinope'},
     url='https://github.com/reid418/pysinope',

@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 import requests
-import json
+from sinopeexceptions import InvalidSinopeAuthenticationError, UnknownSinopeError
 
 
 class Thermostat(object):
+    """ Implementation of a thermostat object of the Sinope interface."""
     MODE_MANUAL = "2"
     MODE_AUTOMATIC = "3"
 
@@ -73,8 +74,7 @@ class Thermostat(object):
         self._alarm = unicode(json_thermostat.get('alarm', self._alarm))
         self._error_code = unicode(json_thermostat.get('errorCode', self._error_code))
         self._heat_level = unicode(json_thermostat.get('heatLevel', self._heat_level))
-        self._mode = unicode(json_thermostat.get('mode', self._mode) if 1 == len(str(json_thermostat.get('mode', self._mode))) else str(json_thermostat.get('mode', self._mode))[1])
-        # self._rssi = unicode(json_thermostat['rssi'])
+        self._mode = str(json_thermostat.get('mode', self._mode))[:1]    # Mode is represented by the first digit.
         self._setpoint = unicode(json_thermostat.get('setpoint', self._setpoint))
         self._temperature = unicode(json_thermostat.get('temperature', self._temperature))
 
@@ -106,6 +106,7 @@ class Thermostat(object):
 
 
 class Gateway(object):
+    """Implementation of a Sinope's access point."""
     MODE_AWAY = '2'
     MODE_HOME = '0'
 
@@ -212,8 +213,12 @@ class PySinope(object):
         r = requests.post("https://neviweb.com/api/login",
                           data=login_parameters,
                           headers=self._headers)
-
         response = r.json()
+        if 'error' in response:
+            if response['error']['code'] == 1002:
+                raise InvalidSinopeAuthenticationError(email)
+            else:
+                raise UnknownSinopeError(response)
         self._session_id = response['session']
         self._headers['Session-Id'] = self._session_id
         return self
@@ -263,22 +268,3 @@ class PySinope(object):
             if gateway.name == name:
                 return gateway
         raise Exception('Gateway {} not found.'.format(name))
-
-
-if "__main__" == __name__:
-    import sys
-    py_sinope = PySinope()
-
-    with py_sinope.connect(sys.argv[1], sys.argv[2]) as sinope_interface:
-        sinope_interface.read_gateway()
-
-        main_gateway = sinope_interface.get_gateway_by_name('Home')
-        therm = main_gateway.get_thermostat_by_name('Bedroom')
-
-        print therm.temperature
-        print therm.setpoint
-
-        therm.mode = Thermostat.MODE_MANUAL  # Set the Thermostat mode.
-        therm.setpoint = "20.00"
-
-        print unicode(therm)
