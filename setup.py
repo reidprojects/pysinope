@@ -9,6 +9,7 @@ setup(
     license='MIT',
     author='Alex Reid',
     author_email='alex.reid418@gmail.com',
+    download_url='https://github.com/reid418/pysinope/archive/1.0.0.tar.gz',
     description='Web scrapper that allows to read/write the Sinope '
                 'thermostats.'
 )
