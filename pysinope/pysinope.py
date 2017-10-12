@@ -253,11 +253,11 @@ class PySinope(object):
                 self.read_thermostat(thermostat)
 
     def read_thermostat(self, thermostat):
-        r = requests.get(
+        response = requests.get(
                 "https://neviweb.com/api/device/{}/data?".format(thermostat.id),
                 headers=self._headers)
 
-        thermostat.load_parameters_from_json(r.json())
+        thermostat.load_parameters_from_json(response.json())
 
     @property
     def gateways(self):
@@ -268,3 +268,20 @@ class PySinope(object):
             if gateway.name == name:
                 return gateway
         raise Exception('Gateway {} not found.'.format(name))
+
+    def get_statistics(self):
+        try:
+            response = requests.get(
+                "https://neviweb.com/api/device?gatewayId=767",
+                headers=self._headers)
+            generic_gateway_information = response.json()
+            print generic_gateway_information
+            for thermostat in generic_gateway_information:
+                response = requests.get("https://neviweb.com/api/device/{}/statistics".format(thermostat["id"]),
+                                        headers=self._headers)
+                print thermostat['name'], response.json()
+
+        except:
+            import traceback
+            print traceback.format_exc()
+
